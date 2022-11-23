@@ -4,7 +4,7 @@ module Limits
 export AbstractLimit, AbstractColimit, Limit, Colimit,
   LimitAlgorithm, ColimitAlgorithm,
   ob, cone, cocone, apex, legs, limit, colimit, universal,
-  Terminal, Initial, terminal, initial, delete, create, factorize,
+  Terminal, Initial, terminal, initial, delete, create, factorize, image, coimage, epi_mono,
   BinaryProduct, Product, product, proj1, proj2, pair,
   BinaryPullback, Pullback, pullback,
   BinaryEqualizer, Equalizer, equalizer, incl,
@@ -19,9 +19,10 @@ using StructEquality
 using StaticArrays: StaticVector, SVector
 
 using ...GAT, ...Theories
-import ...Theories: ob, terminal, product, proj1, proj2, equalizer, incl,
+import ...Schemas: ob, hom, dom, codom
+import ...Theories: terminal, product, proj1, proj2, equalizer, incl,
   initial, coproduct, coproj1, coproj2, coequalizer, proj,
-  delete, create, pair, copair, factorize
+  delete, create, pair, copair, factorize, universal
 using ...CSetDataStructures, ..FinCats, ..FreeDiagrams
 import ..FreeDiagrams: apex, legs
 
@@ -263,6 +264,29 @@ define the method `universal(::Coequalizer{T}, ::SMulticospan{1,T})`.
 factorize(lim::Equalizer, h) = universal(lim, SMultispan{1}(h))
 factorize(colim::Coequalizer, h) = universal(colim, SMulticospan{1}(h))
 
+"""https://en.wikipedia.org/wiki/Image_(category_theory)#Second_definition"""
+image(f) = equalizer(legs(pushout(f,f))...)
+
+"""https://en.wikipedia.org/wiki/Coimage"""
+coimage(f) = coequalizer(legs(pullback(f,f))...)
+
+"""
+The image and coimage are isomorphic. We get this isomorphism using univeral
+properties.
+
+      CoIm′ ╌╌> I ↠ CoIm
+        ┆ ⌟     |
+        v       v
+        I   ⟶  R ↩ Im
+        |       ┆
+        v    ⌜  v
+        R ╌╌> Im′
+"""
+function epi_mono(f)
+  Im, CoIm = image(f), coimage(f)
+  iso = factorize(Im, factorize(CoIm, f))
+  return ComposablePair(proj(CoIm) ⋅ iso, incl(Im))
+end
 
 # (Co)cartesian monoidal categories
 ###################################

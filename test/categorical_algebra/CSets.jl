@@ -1,6 +1,9 @@
 module TestCSets
 using Test
 
+using JSON
+import JSONSchema
+
 using Catlab, Catlab.Theories, Catlab.Graphs, Catlab.CategoricalAlgebra
 
 @present SchDDS(FreeSchema) begin
@@ -24,19 +27,19 @@ add_edges!(g, 2:4, 3:5)
 @test FinSet(g, :V) == FinSet(6)
 f = FinFunction(g, :V)
 @test collect(f) == 1:6
-@test is_indexed(f)
+# @test is_indexed(f)
 f = FinFunction(g, :src)
 @test codom(f) == FinSet(6)
 @test collect(f) == 2:4
-@test is_indexed(f)
+# @test is_indexed(f)
 
 f = FinDomFunction(g, :E)
 @test collect(f) == 1:3
-@test is_indexed(f)
+# @test is_indexed(f)
 f = FinDomFunction(g, :tgt)
 @test codom(f) == TypeSet(Int)
 @test collect(f) == 3:5
-@test is_indexed(f)
+# @test is_indexed(f)
 
 g = path_graph(WeightedGraph{Float64}, 3, E=(weight=[0.5, 1.5],))
 @test TypeSet(g, :Weight) == TypeSet(Float64)
@@ -80,6 +83,21 @@ g, h = path_graph(Graph, 4), cycle_graph(Graph, 2)
 @test id(g) isa TightACSetTransformation
 @test force(compose(id(g), α)) == α
 @test force(compose(α, id(h))) == α
+
+# Injectivity / surjectivity.
+G = @acset Graph begin V=2; E=1; src=1; tgt=2 end
+H = @acset Graph begin V=2; E=2; src=1; tgt=2 end
+I = @acset Graph begin V=2; E=2; src=[1,2]; tgt=[1,2] end
+f_ = homomorphism(G, H; monic=true)
+g_ = homomorphism(H, G)
+h_ = homomorphism(G, I)
+@test is_monic(f_)
+@test !is_epic(f_)
+@test !is_monic(g_)
+@test is_epic(g_)
+@test !is_monic(h_)
+@test !is_epic(h_)
+
 
 # Limits
 #-------
@@ -187,6 +205,9 @@ coprod = ob(colim)
 @test force(coproj1(colim)⋅γ) == α
 @test force(coproj2(colim)⋅γ) == force(β)
 
+colim2 = coproduct(path_graph(Graph, 4), cycle_graph(Graph, 2))
+@test hash(colim2) == hash(colim)
+
 # Coequalizer in Graph: collapsing a segment to a loop.
 g = Graph(2)
 add_edge!(g, 1, 2)
@@ -261,19 +282,21 @@ end
                            index=[:src,:tgt]) <: AbstractGraph
 
 # Terminal labeled graph.
-@test ob(terminal(VELabeledGraph)) == cycle_graph(VELabeledGraph{Nothing}, 1)
+@test ob(terminal(VELabeledGraph)) == cycle_graph(VELabeledGraph{Tuple{}}, 1; E=(;elabel=[()]), V=(;vlabel=[()]))
 
 # Product of labeled graphs.
 g = path_graph(VELabeledGraph{Symbol}, 2, V=(vlabel=[:a,:b],), E=(elabel=:f,))
 h = path_graph(VELabeledGraph{String}, 2, V=(vlabel=["x","y"],), E=(elabel="f",))
-lim = product(g, h)
-@test is_natural(proj1(lim)) && is_natural(proj2(lim))
+π1, π2 = lim = product(g, h)
 prod = ob(lim)
 @test prod isa VELabeledGraph{Tuple{Symbol,String}}
 @test Set(prod[:vlabel]) == Set([(:a, "x"), (:a, "y"), (:b, "x"), (:b, "y")])
 @test only(prod[:elabel]) == (:f, "f")
 @test prod[src(prod,1), :vlabel] == (:a, "x")
 @test prod[tgt(prod,1), :vlabel] == (:b, "y")
+@test is_natural(π1) && is_natural(π2)
+@test π1[:Label]((:a, "x")) == :a
+@test π2[:Label]((:a, "x")) == "x"
 
 # Pullback of weighted graphs.
 g0 = WeightedGraph{Nothing}(2)
@@ -314,6 +337,21 @@ colim = pushout(α, β)
 α′ = ACSetTransformation(V=[2], E=Int[], g0, g)
 @test !is_natural(α′) # Vertex labels don't match.
 @test_throws ErrorException pushout(α′, β)
+
+# Pushout with given type components.
+A = @acset SetAttr{Symbol} begin X=2; f=[:a,:b] end
+B = @acset SetAttr{Symbol} begin X=2; f=[:x,:y] end
+C = @acset SetAttr{Symbol} begin X=1; f=[:z] end
+β = ACSetTransformation((X=[1,2], D=FinFunction(Dict(:a=>:x,:b=>:y))), A, B)
+γ = ACSetTransformation((X=[1,1], D=FinFunction(Dict(:a=>:z,:b=>:z))), A, C)
+@test all(is_natural, (β,γ))
+g = (D=FinFunction(Dict(:x=>:q, :y=>:q)),)
+h = (D=FinFunction(Dict(:z=>:q)),)
+colim = pushout(β, γ, type_components=[g,h])
+@test all(is_natural, legs(colim))
+@test ob(colim) == @acset(SetAttr{Symbol}, begin X=1; f=[:q] end)
+h′ = (D=FinFunction(Dict(:z=>:b)),)
+@test_throws ErrorException pushout(β, γ, type_components=[g,h′])
 
 # Finding C-set morphisms
 #########################
@@ -471,8 +509,8 @@ A = Subobject(S, X=[3,4,5])
 @test ¬Subobject(ι₂) |> force == Subobject(ι₁)
 @test ~A |> force == ⊤(S) |> force
 
-# Serialization
-###############
+# Acset serialization
+#####################
 
 function roundtrip_json_acset(x::T) where T <: ACSet
   mktempdir() do dir
@@ -502,5 +540,24 @@ end
 ldds = LabeledDDS{Int}()
 add_parts!(ldds, :X, 4, Φ=[2,3,4,1], label=[100, 101, 102, 103])
 @test roundtrip_json_acset(ldds) == ldds
+
+# Schema serialization
+######################
+
+function roundtrip_json_acset_schema(pres::Presentation)
+  mktempdir() do dir
+    path = joinpath(dir, "schema.json")
+    write_json_acset_schema(pres, path)
+    read_json_acset_schema(path)
+  end
+end
+
+json_schema = JSONSchema.Schema(acset_schema_json_schema())
+
+for schema in [SchGraph, SchWeightedGraph, SchLabeledDDS]
+  schema_dict = generate_json_acset_schema(schema)
+  @test isnothing(JSONSchema.validate(json_schema, schema_dict))
+  @test roundtrip_json_acset_schema(schema) == schema
+end
 
 end

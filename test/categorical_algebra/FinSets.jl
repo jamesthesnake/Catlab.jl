@@ -51,6 +51,7 @@ F = FinDomFunctor([FinSet(1), FinSet(3), FinSet(1)],
 f = FinFunction([1,3,4], 5)
 g = FinFunction([1,1,2,2,3], 3)
 h = FinFunction([3,1,2], 3)
+@test f isa FinFunction{Int,Int}
 @test (dom(f), codom(f)) == (FinSet(3), FinSet(5))
 @test force(f) === f
 @test codom(FinFunction([1,3,4])) == FinSet(4)
@@ -58,6 +59,7 @@ h = FinFunction([3,1,2], 3)
 X = FinSet(Set([:w,:x,:y,:z]))
 k = FinFunction(Dict(:a => :x, :b => :y, :c => :z), X)
 ℓ = FinFunction(Dict(:w => 2, :x => 1, :y => 1, :z => 4), FinSet(4))
+@test ℓ isa FinFunction{<:AbstractSet{Symbol},Int}
 @test (dom(k), codom(k)) == (FinSet(Set([:a, :b, :c])), X)
 @test (dom(ℓ), codom(ℓ)) == (X, FinSet(4))
 @test force(k) === k
@@ -105,6 +107,19 @@ g = FinFunction(5:-1:1)
   "FinFunction($([1,3,4]), 3, 5, index=true)"
 @test sshow(FinFunction(Dict(:a => 1, :b => 3), FinSet(3))) ==
   "FinFunction($(Dict(:a => 1, :b => 3)), FinSet(3))"
+
+# Injectivity / Surjectivity.
+f = FinFunction([1,3,4])
+g = FinFunction([1,1,2])
+X = FinSet(Set([:x,:y,:z]))
+k = FinFunction(Dict(:a => :x, :b => :y, :c => :z), X)
+
+@test is_monic(f)
+@test !is_epic(f)
+@test is_epic(g)
+@test !is_monic(g)
+@test is_monic(k)
+@test is_epic(k)
 
 # Functions out of finite sets
 ##############################

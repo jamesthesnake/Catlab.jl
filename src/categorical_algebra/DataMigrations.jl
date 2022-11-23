@@ -5,7 +5,7 @@ export DataMigration, DeltaMigration, SigmaMigration, migrate, migrate!,
   representable, yoneda, colimit_representables
 
 using ...Syntax, ...Present, ...Theories
-using ...Theories: SchemaDesc, ob, hom, dom, codom, attr, adom
+using ...Theories: ob, hom, dom, codom, attr
 using ..Categories, ..FinCats, ..Limits, ..Diagrams, ..FinSets, ..CSets
 using ...Graphs, ..FreeDiagrams
 import ..Categories: ob_map, hom_map
@@ -135,10 +135,10 @@ migrate(::Type{T}, X::ACSet, FOb, FHom) where T <: ACSet =
 function migrate!(X::StructACSet{S}, Y::ACSet, F::DeltaSchemaMigration) where S
   partsX = Dict(c => add_parts!(X, c, nparts(Y, nameof(ob_map(F,c))))
                 for c in ob(S))
-  for (f,c,d) in zip(hom(S), dom(S), codom(S))
+  for (f,c,d) in homs(S)
     set_subpart!(X, partsX[c], f, partsX[d][subpart(Y, hom_map(F,f))])
   end
-  for (f,c) in zip(attr(S), adom(S))
+  for (f,c,_) in attrs(S)
     set_subpart!(X, partsX[c], f, subpart(Y, hom_map(F,f)))
   end
   return X
@@ -277,7 +277,7 @@ function ob_map(ΣF::SigmaMigration, ::Type{T}, X::FinDomFunctor) where T<:ACSet
   colimX = map(parts(diagramD, :V)) do i
     F∇d = ob(comma_cats, i)
     Xobs = FinSet{Int,Int}[ ob_map(X, c) for (c,_) in ob(F∇d) ]
-    Xhoms = [ hom_map(X, hom(F∇d, g)) for g in parts(F∇d, :E) ]
+    Xhoms = FinFunction[ hom_map(X, hom(F∇d, g)) for g in parts(F∇d, :E) ]
     colimit(FreeDiagram(Xobs, collect(zip(Xhoms, src(F∇d), tgt(F∇d)))))
   end
 
@@ -459,7 +459,7 @@ end
 Returns a `FreeDiagram` whose objects are the generating objects of `pres` and 
 whose homs are the generating homs of `pres`.
 """
-function FreeDiagrams.FreeDiagram(pres::Presentation{ThSchema, Symbol}) where Schema
+function FreeDiagrams.FreeDiagram(pres::Presentation{ThSchema, Symbol})
   obs = Array{FreeSchema.Ob}(generators(pres, :Ob))
   homs = Array{FreeSchema.Hom}(generators(pres, :Hom))
   doms = map(h -> generator_index(pres, nameof(dom(h))), homs)

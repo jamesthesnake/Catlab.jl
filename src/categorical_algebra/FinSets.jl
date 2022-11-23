@@ -4,7 +4,7 @@ module FinSets
 export FinSet, FinFunction, FinDomFunction, TabularSet, TabularLimit,
   force, is_indexed, preimage,
   JoinAlgorithm, SmartJoin, NestedLoopJoin, SortMergeJoin, HashJoin,
-  SubFinSet, SubOpBoolean
+  SubFinSet, SubOpBoolean, is_monic, is_epic
 
 using StructEquality
 using DataStructures: OrderedDict, IntDisjointSets, union!, find_root!
@@ -113,7 +113,7 @@ function Base.show(io::IO, ::MIME"text/plain", set::TabularSet{T}) where T
   print(io, "$(length(set))-element TabularSet{$T}")
   if !get(io, :compact, false)
     println(io, ":")
-    PrettyTables.pretty_table(io, set.table, nosubheader=true)
+    PrettyTables.pretty_table(io, set.table, show_subheader=false)
   end
 end
 
@@ -121,7 +121,7 @@ function Base.show(io::IO, ::MIME"text/html", set::TabularSet)
   println(io, "<div class=\"tabular-set\">")
   println(io, "$(length(set))-element TabularSet")
   PrettyTables.pretty_table(io, set.table, backend=Val(:html), standalone=false,
-                            nosubheader=true)
+                            show_subheader=false)
   println(io, "</div>")
 end
 
@@ -237,7 +237,7 @@ The domain of this function is always of type `FinSet{Int}`, with elements of
 the form ``{1,...,n}``.
 """
 struct FinDomFunctionVector{T,V<:AbstractVector{T}, Codom<:SetOb{T}} <:
-    FinDomFunction{Int,FinSetInt,Codom}
+    SetFunction{FinSetInt,Codom}
   func::V
   codom::Codom
 end
@@ -286,7 +286,7 @@ Works in the same way as the special case of [`IndexedFinFunctionVector`](@ref),
 except that the index is typically a dictionary, not a vector.
 """
 struct IndexedFinDomFunctionVector{T,V<:AbstractVector{T},Index,Codom<:SetOb{T}} <:
-    FinDomFunction{Int,FinSetInt,Codom}
+    SetFunction{FinSetInt,Codom}
   func::V
   index::Index
   codom::Codom
@@ -381,6 +381,12 @@ Sets.do_compose(f::Union{FinFunctionVector,IndexedFinFunctionVector},
                 g::Union{FinDomFunctionVector,IndexedFinDomFunctionVector}) =
   FinDomFunctionVector(g.func[f.func], codom(g))
 
+# These could be made to fail early if ever used in performance-critical areas
+is_epic(f::FinFunction) =
+length(codom(f)) == length(Set(values(collect(f))))
+is_monic(f::FinFunction)  =
+length(dom(f)) == length(Set(values(collect(f))))
+
 # Dict-based functions
 #---------------------
 
@@ -390,7 +396,7 @@ The domain is a `FinSet{S}` where `S` is the type of the dictionary's `keys`
 collection.
 """
 @struct_hash_equal struct FinDomFunctionDict{K,D<:AbstractDict{K},Codom<:SetOb} <:
-    FinDomFunction{D,FinSet{AbstractSet{K},K},Codom}
+    SetFunction{FinSetCollection{Base.KeySet{K,D},K},Codom}
   func::D
   codom::Codom
 end
