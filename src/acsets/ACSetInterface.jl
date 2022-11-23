@@ -1,14 +1,10 @@
 module ACSetInterface
-export ACSet, acset_schema,
+export ACSet, acset_schema, acset_name,
   nparts, parts, has_part, has_subpart, subpart, incident,
-  add_part!, add_parts!, set_subpart!, set_subparts!, rem_part!, rem_parts!,
+  add_part!, add_parts!, set_subpart!, set_subparts!, rem_part!, rem_parts!, clear_subpart!,
   copy_parts!, copy_parts_only!, disjoint_union, tables, pretty_tables, @acset
 
 using StaticArrays: StaticArray
-
-using ..Syntax: GATExpr, args
-using ..Theories: dom, codom
-using ...Meta: strip_lines
 
 using PrettyTables: pretty_table
 using Tables
@@ -19,6 +15,11 @@ abstract type ACSet end
 Get the schema of an acset at runtime.
 """
 function acset_schema end
+
+"""
+Get the name of an acset at runtime
+"""
+function acset_name end
 
 """ Number of parts of given type in an acset.
 """
@@ -61,7 +62,7 @@ convention differs from DataFrames but note that the alternative interpretation
 of `[:src,:vattr]` as two independent columns does not even make sense, since
 they have different domains (belong to different tables).
 """
-function  subpart end
+function subpart end
 @inline Base.@propagate_inbounds subpart(acs, part, name) = view_or_slice(subpart(acs, name), part)
 
 function view_or_slice end
@@ -69,25 +70,18 @@ function view_or_slice end
 @inline view_or_slice(x::AbstractVector, ::Colon) = x
 @inline Base.@propagate_inbounds view_or_slice(x::AbstractVector, i) = @view x[i]
 
-@inline subpart(acs, expr::GATExpr{:generator}) = subpart(acs, first(expr))
-@inline subpart(acs, expr::GATExpr{:id}) = parts(acs, first(dom(expr)))
-
 function subpart(acs, part, names::AbstractVector{Symbol})
   foldl(names, init=part) do part, name
     subpart(acs, part, name)
   end
 end
-subpart(acs, part, expr::GATExpr{:compose}) =
-  subpart(acs, part, subpart_names(expr))
 
 subpart(acs, names::AbstractVector{Symbol}) =
   subpart(acs, subpart(acs, names[1]), names[2:end])
-subpart(acs, expr::GATExpr{:compose}) = subpart(acs, subpart_names(expr))
 
-subpart_names(expr::GATExpr{:generator}) = Symbol[first(expr)]
-subpart_names(expr::GATExpr{:id}) = Symbol[]
-subpart_names(expr::GATExpr{:compose}) =
-  mapreduce(subpart_names, vcat, args(expr))
+Base.getindex(acs::ACSet, part, name) = subpart(acs, part, name)
+Base.getindex(acs::ACSet, name) = subpart(acs, name)
+
 
 """ Get superparts incident to part in acset.
 
@@ -117,8 +111,6 @@ function incident(acs, part, names::AbstractVector{Symbol};
   end
 end
 
-incident(acs, part, expr::GATExpr; kw...) =
-  incident(acs, part, subpart_names(expr); kw...)
 
 @inline add_part!(acs, type; kw...) = add_part!(acs, type, (;kw...))
 
@@ -175,9 +167,9 @@ function set_subpart! end
 
 # Inlined for the same reason as `subpart`.
 
-@inline function set_subpart!(acs, part::AbstractVector{Int}, name, vals)
-  broadcast(part, vals) do part, vals
-    set_subpart!(acs, part, name, vals)
+@inline function set_subpart!(acs, parts::AbstractVector{Int}, name, vals)
+  broadcast(parts, vals) do part, val
+    set_subpart!(acs, part, name, val)
   end
 end
 
@@ -192,6 +184,26 @@ See also: [`set_subpart!`](@ref).
 end
 
 @inline set_subparts!(acs, part; kw...) = set_subparts!(acs, part, (;kw...))
+
+Base.setindex!(acs::ACSet, val, part, name) = set_subpart!(acs, part, name, val)
+Base.setindex!(acs::ACSet, vals, name) = set_subpart!(acs, name, vals)
+
+"""Clear a subpart in a C-set
+
+If the subpart is a hom, this is equivalent to setting it to 0
+If the subpart is an attr, then if the type has nothing as a subtype, it
+sets value to nothing. If the type doesn't have nothing as a subtype, then
+it does not change the value, but still unsets the index, so this can
+potentially cause an inconsistent acset if used without caution.
+"""
+
+function clear_subpart! end
+
+function clear_subpart!(acs, parts::AbstractVector{Int}, name)
+  for part in parts
+    clear_subpart!(acs, part, name)
+  end
+end
 
 """ Remove part from a C-set.
 
@@ -267,27 +279,39 @@ Get a named tuple of Tables.jl-compatible tables from an acset
 """
 function tables end
 
-""" Display an ACSet prettily
+# Pretty printing
+#################
 
-This works for any acset that implements tables
+""" Display an acset using PrettyTables.jl.
+
+This works for any acset that implements [`tables`](@ref).
 """
+function pretty_tables(io::IO, acs::ACSet; tables=nothing, kw...)
+  options = merge(default_pretty_table_options, (; kw...))
+  all_tables = ACSetInterface.tables(acs)
+  table_names = isnothing(tables) ? keys(all_tables) : tables
+  for name in table_names
+    table = all_tables[name]
 
-# Fancy Displaying
+    # By convention, omit trivial tables with no columns.
+    isempty(Tables.columnnames(table)) && continue
 
-function pretty_tables(io::IO, acs::ACSet; kw...)
-  options = merge((nosubheader=true, show_row_number=true), (; kw...))
-  for (ob, table) in pairs(tables(acs))
-    # Note: PrettyTables will not print tables with zero rows.
-    if !(isempty(Tables.columnnames(table)) || Tables.rowcount(table) == 0)
-      pretty_table(io, table, row_number_column_title=string(ob); options...)
-    end
+    # By necessity, omit tables with no rows. PrettyTables will not print them.
+    Tables.rowcount(table) == 0 && continue
+
+    pretty_table(io, table; row_number_column_title=string(name), options...)
   end
 end
 
 pretty_tables(acs::ACSet; kw...) = pretty_tables(stdout, acs; kw...)
 
+const default_pretty_table_options = (
+  show_subheader = false,
+  show_row_number = true,
+)
+
 function Base.show(io::IO, ::MIME"text/plain", acs::T) where T <: ACSet
-  print(io, T)
+  print(io, acset_name(acs))
   print(io, " with elements ")
   join(io, ["$ob = $(parts(acs,ob))" for ob in keys(tables(acs))], ", ")
   println(io)
@@ -297,7 +321,7 @@ end
 function Base.show(io::IO, ::MIME"text/html", acs::T) where T <: ACSet
   println(io, "<div class=\"c-set\">")
   print(io, "<span class=\"c-set-summary\">")
-  print(io, T)
+  print(io, acset_name(acs))
   print(io, " with elements ")
   join(io, ["$ob = $(parts(acs,ob))" for ob in keys(tables(acs))], ", ")
   println(io, "</span>")
@@ -305,30 +329,6 @@ function Base.show(io::IO, ::MIME"text/html", acs::T) where T <: ACSet
   println(io, "</div>")
 end
 
-macro acset(head, body)
-  @assert body.head == :block
-  vals = Expr(:call, :(Dict{Symbol,Any}))
-  for l in strip_lines(body).args
-    @assert l.head == :(=)
-    push!(vals.args, :($(Expr(:quote, l.args[1])) => $(l.args[2])))
-  end
-  :(init_acset($(esc(head)), $(esc(vals))))
-end
-
-function init_acset(T::Type{<:ACSet}, initvals::Dict{Symbol,Any})
-  acs = T()
-  s = acset_schema(acs)
-  ob_specs = filter((kv) -> kv[1] ∈ s.obs, pairs(initvals))
-  hom_specs = filter((kv) -> kv[1] ∈ s.homs, pairs(initvals))
-  attr_specs = filter((kv) -> kv[1] ∈ s.attrs, pairs(initvals))
-  for (k,v) in ob_specs
-    add_parts!(acs, k, Int(v))
-  end
-  for (k,v) in Iterators.flatten((hom_specs, attr_specs))
-    set_subpart!(acs, :, k, collect_nonvector(v))
-  end
-  acs
-end
 collect_nonvector(v::AbstractVector) = v
 collect_nonvector(v) = collect(v)
 

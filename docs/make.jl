@@ -52,7 +52,7 @@ makedocs(
   pages       = Any[
     "Catlab.jl" => "index.md",
     "Vignettes" => no_literate ? [] : Any[
-      "Seven Sketches" => Any[
+      "Seven Sketches in Compositionality" => Any[
         "generated/sketches/partitions.md",
         "generated/sketches/preorders.md",
         "generated/sketches/meets.md",
@@ -64,8 +64,9 @@ makedocs(
         "generated/graphs/graphs_label.md",
         "generated/graphs/subgraphs.md",
       ],
-      "Diagrams" => Any[
-        "generated/diagrams/diagrams.md",
+      "Categorical Algebra" => Any[
+        "generated/categorical_algebra/diagrams.md",
+        "generated/categorical_algebra/acset_serialization.md",
       ],
       "Wiring Diagrams" => Any[
         "generated/wiring_diagrams/wiring_diagram_basics.md",
@@ -73,8 +74,9 @@ makedocs(
         "generated/wiring_diagrams/wd_cset.md",
       ],
       "Graphics" => Any[
-        "generated/graphics/composejl_wiring_diagrams.md",
+        "generated/graphics/graphviz_graphs.md",
         "generated/graphics/graphviz_wiring_diagrams.md",
+        "generated/graphics/composejl_wiring_diagrams.md",
         "generated/graphics/tikz_wiring_diagrams.md",
         "generated/graphics/layouts_vs_drawings.md",
       ],
